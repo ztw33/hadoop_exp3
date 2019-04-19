@@ -122,12 +122,13 @@ public class InvertedIndexer {
 						frequency += currentValues.get(string);
 					}
 					double avgFrequency = frequency / currentValues.size();
-					StringBuilder out = new StringBuilder(currentWord+"\t");
-					out.append(String.format("%.3f",avgFrequency));
+					StringBuilder out = new StringBuilder("\t");
+					out.append(String.format("%.2f",avgFrequency));
 					out.append(",");
 					for(String string : currentValues.keySet()) {
-						out.append(string+":"+currentValues.get(string));
+						out.append(string+":"+currentValues.get(string)+";");
 					}
+					out.deleteCharAt(out.lastIndexOf(";"));
 					context.write(new Text(currentWord), new Text(out.toString()));
 				}
 				currentWord = word;
@@ -143,12 +144,13 @@ public class InvertedIndexer {
 				frequency += currentValues.get(string);
 			}
 			double avgFrequency = frequency / currentValues.size();
-			StringBuilder out = new StringBuilder(currentWord+"\t");
-			out.append(String.format("%.3f",avgFrequency));
+			StringBuilder out = new StringBuilder("\t");
+			out.append(String.format("%.2f",avgFrequency));
 			out.append(",");
 			for(String string : currentValues.keySet()) {
-				out.append(string+":"+currentValues.get(string));
+				out.append(string+":"+currentValues.get(string)+";");
 			}
+			out.deleteCharAt(out.lastIndexOf(";"));
 			context.write(new Text(currentWord), new Text(out.toString()));
 		}
 	}
