@@ -13,23 +13,23 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
-
-import javax.print.DocFlavor;
 import java.io.IOException;
 import java.util.*;
 
-//TODO:添加partitioner
 
 public class InvertedIndexer {
-	public static class InvertedIndexMapper extends Mapper<Object,Text,Text,IntWritable> {
-
+	public static class InvertedIndexMapper
+			extends Mapper<Object,Text,Text,IntWritable> {
 
 		public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
 			FileSplit fileSplit = (FileSplit)context.getInputSplit();
 			String fileName = fileSplit.getPath().getName();
 			//去除文件后缀，仅保留文件名
 			String[] tokens = fileName.split("[.]");
-			fileName = tokens[0];
+			fileName = "";
+			for(int i = 0;i < tokens.length-2;i++) {
+				fileName += tokens[i];
+			}
 			Text word = new Text();
 			IntWritable frequence = new IntWritable();
 			//统计一行中单词的个数
@@ -65,7 +65,7 @@ public class InvertedIndexer {
 		}
 	}
 
-	//Combiner进行局部处理
+	//Combiner进行局部处理,合并键相同的值
 	public static class InvertedIndexCombiner
 			extends Reducer<Text, IntWritable, Text, IntWritable> {
 
@@ -83,6 +83,7 @@ public class InvertedIndexer {
 	}
 
 	//定义Partitioner,将单词从key中拆分出来
+	//目的：让相同的单词对应的记录发往同一个reducer
 	public static class InvertedIndexPartitioner
 			extends Partitioner<Text, IntWritable> {
 		public int getPartition(Text key, IntWritable value, int numReduceTasks) {
@@ -107,12 +108,7 @@ public class InvertedIndexer {
 				sum += val.get();
 			}
 			if(word.equals(currentWord)) {
-				if(currentValues.get(fileName) == null) {
-					currentValues.put(fileName, sum);
-				}
-				else {
-					currentValues.put(fileName, sum + currentValues.get(fileName));
-				}
+				currentValues.put(fileName, sum);
 			}
 			else {
 				if(!currentWord.equals("")) {
@@ -122,7 +118,7 @@ public class InvertedIndexer {
 						frequency += currentValues.get(string);
 					}
 					double avgFrequency = frequency / currentValues.size();
-					StringBuilder out = new StringBuilder("\t");
+					StringBuilder out = new StringBuilder();
 					out.append(String.format("%.2f",avgFrequency));
 					out.append(",");
 					for(String string : currentValues.keySet()) {
@@ -144,7 +140,7 @@ public class InvertedIndexer {
 				frequency += currentValues.get(string);
 			}
 			double avgFrequency = frequency / currentValues.size();
-			StringBuilder out = new StringBuilder("\t");
+			StringBuilder out = new StringBuilder();
 			out.append(String.format("%.2f",avgFrequency));
 			out.append(",");
 			for(String string : currentValues.keySet()) {
