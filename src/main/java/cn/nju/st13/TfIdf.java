@@ -4,7 +4,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -88,9 +87,9 @@ public class TfIdf {
     }
 
     public static class TfIdfReducer
-            extends Reducer<Text, IntWritable, Text, DoubleWritable> {
+            extends Reducer<Text, IntWritable, Text, Text> {
 
-        private DoubleWritable result = new DoubleWritable();
+        private Text result = new Text();
         private static String currentTerm = " ";
         private static int currentSum = 0;
         private static int currentCount = 0;
@@ -113,8 +112,9 @@ public class TfIdf {
                     Configuration conf = context.getConfiguration();
                     String author = currentTerm.split(",")[0];
                     int countFile = Integer.parseInt(conf.get(author));
-                    double tfidf = currentSum*Math.log((double)countFile/(double)(currentCount+1));
-                    result.set(tfidf);
+                    double idf = Math.log((double)countFile/(double)(currentCount+1));
+                    String temp = "TF: "+currentSum+"; IDF: "+String.format("%.2f", idf);
+                    result.set(temp);
                     context.write(new Text(currentTerm), result);
                 }
                 currentTerm = authorAndWord;
@@ -130,8 +130,9 @@ public class TfIdf {
             Configuration conf = context.getConfiguration();
             String author = currentTerm.split(",")[0];
             int countFile = Integer.parseInt(conf.get(author));
-            double tfidf = currentSum*Math.log((double)countFile/(double)(currentCount+1));
-            result.set(tfidf);
+            double idf = Math.log((double)countFile/(double)(currentCount+1));
+            String temp = "TF: "+currentSum+"; IDF: "+String.format("%.2f", idf);
+            result.set(temp);
             context.write(new Text(currentTerm), result);
         }
 
@@ -173,7 +174,7 @@ public class TfIdf {
             conf.set(entry.getKey(), entry.getValue().toString());
         }
 
-        Job job = Job.getInstance(conf, "tfidf job");
+        Job job = Job.getInstance(conf, "2019St13 TF-IDF Job");
         job.setJarByClass(TfIdf.class);
         job.setMapperClass(TfIdfMapper.class);
         job.setCombinerClass(TfIdfCombiner.class);
