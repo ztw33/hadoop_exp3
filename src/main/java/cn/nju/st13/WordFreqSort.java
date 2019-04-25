@@ -7,6 +7,7 @@ import org.apache.hadoop.io.FloatWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.lib.TotalOrderPartitioner;
+import org.apache.hadoop.mapred.lib.aggregate.ValueAggregatorCombiner;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
@@ -28,15 +29,10 @@ public class WordFreqSort {
     //Job2 Mapper
     public static class WordFreqSortMapper extends Mapper<Object, Text, FloatWritable, Text> {
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            String input = value.toString();
-            String[] lines = input.split("\n");
+            String[] lineCompent = value.toString().split("\t");
+            String[] content = lineCompent[1].split(",");
 
-            for (String str : lines) {
-                String[] lineCompent = str.split("\t");
-                String[] content = lineCompent[1].split(",");
-
-                context.write(new FloatWritable(new Float(content[0])), new Text(lineCompent[0]));
-            }
+            context.write(new FloatWritable(new Float(content[0])), new Text(lineCompent[0]));
         }
     }
 
