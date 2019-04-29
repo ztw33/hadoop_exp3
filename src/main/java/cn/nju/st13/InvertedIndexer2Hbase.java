@@ -18,7 +18,7 @@ import java.io.IOException;
 import java.util.*;
 
 
-public class InvertedIndexer {
+public class InvertedIndexer2Hbase {
 	public static class InvertedIndexMapper
 			extends Mapper<Object,Text,Text,IntWritable> {
 
@@ -73,7 +73,7 @@ public class InvertedIndexer {
 		private IntWritable result = new IntWritable(0);
 		//Combiner本质就是Reducer
 		public void reduce(Text key, Iterable<IntWritable> values, Context context)
-			throws IOException, InterruptedException {
+				throws IOException, InterruptedException {
 			int sum = 0;
 			for(IntWritable val : values) {
 				sum += val.get();
@@ -120,13 +120,13 @@ public class InvertedIndexer {
 					}
 					double avgFrequency = frequency / currentValues.size();
 					StringBuilder out = new StringBuilder();
-					out.append(String.format("%.2f",avgFrequency));
-					out.append(",");
 					for(String string : currentValues.keySet()) {
 						out.append(string+":"+currentValues.get(string)+";");
 					}
 					out.deleteCharAt(out.lastIndexOf(";"));
 					context.write(new Text(currentWord), new Text(out.toString()));
+
+					//TODO: 将avgFrequency 和 word存入hbase
 				}
 				currentWord = word;
 				currentValues = new HashMap<>();
@@ -142,12 +142,13 @@ public class InvertedIndexer {
 			}
 			double avgFrequency = frequency / currentValues.size();
 			StringBuilder out = new StringBuilder();
-			out.append(String.format("%.2f",avgFrequency));
-			out.append(",");
 			for(String string : currentValues.keySet()) {
 				out.append(string+":"+currentValues.get(string)+";");
 			}
 			out.deleteCharAt(out.lastIndexOf(";"));
+
+			//TODO: 将avgFrequency 和 word存入hbase
+
 			context.write(new Text(currentWord), new Text(out.toString()));
 		}
 	}
