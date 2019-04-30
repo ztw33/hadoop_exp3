@@ -59,7 +59,6 @@ public class SimpleWordCount2Hbase {
 		Configuration conf = HBaseConfiguration.create();
 		Job job = Job.getInstance(conf, "my word count to hbase");
 		job.setJarByClass(SimpleWordCount2Hbase.class);
-
 		job.setMapperClass(MyMapper2.class);
 		job.setMapOutputKeyClass(Text.class);
 		job.setMapOutputValueClass(IntWritable.class);
