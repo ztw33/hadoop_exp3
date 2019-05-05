@@ -2,7 +2,15 @@ package cn.nju.st13;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
+import org.apache.hadoop.hbase.mapreduce.TableReducer;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Job;
@@ -18,7 +26,7 @@ import java.io.IOException;
 import java.util.*;
 
 
-public class InvertedIndexer {
+public class InvertedIndexer2Hbase {
 	public static class InvertedIndexMapper
 			extends Mapper<Object,Text,Text,IntWritable> {
 
@@ -73,7 +81,7 @@ public class InvertedIndexer {
 		private IntWritable result = new IntWritable(0);
 		//Combiner本质就是Reducer
 		public void reduce(Text key, Iterable<IntWritable> values, Context context)
-			throws IOException, InterruptedException {
+				throws IOException, InterruptedException {
 			int sum = 0;
 			for(IntWritable val : values) {
 				sum += val.get();
@@ -96,7 +104,7 @@ public class InvertedIndexer {
 	}
 
 	//Reducer
-	public static class InvertedIndexReducer extends Reducer<Text,IntWritable,Text,Text> {
+	public static class Reducer2HbasePhase1 extends Reducer<Text,IntWritable,Text,Text> {
 		// word, <filename, value>
 		private static String currentWord = "";
 		private static HashMap<String, Integer> currentValues = new HashMap<>();
@@ -118,15 +126,65 @@ public class InvertedIndexer {
 					for(String string : currentValues.keySet()) {
 						frequency += currentValues.get(string);
 					}
-					double avgFrequency = frequency / currentValues.size();
 					StringBuilder out = new StringBuilder();
-					out.append(String.format("%.2f",avgFrequency));
-					out.append(",");
 					for(String string : currentValues.keySet()) {
 						out.append(string+":"+currentValues.get(string)+";");
 					}
 					out.deleteCharAt(out.lastIndexOf(";"));
 					context.write(new Text(currentWord), new Text(out.toString()));
+
+				}
+				currentWord = word;
+				currentValues = new HashMap<>();
+				currentValues.put(fileName, sum);
+			}
+		}
+
+		//最后一个单词
+		public void cleanup(Context context) throws IOException,InterruptedException{
+			double frequency = 0;
+			for(String string : currentValues.keySet()) {
+				frequency += currentValues.get(string);
+			}
+			StringBuilder out = new StringBuilder();
+			for(String string : currentValues.keySet()) {
+				out.append(string+":"+currentValues.get(string)+";");
+			}
+			out.deleteCharAt(out.lastIndexOf(";"));
+			context.write(new Text(currentWord), new Text(out.toString()));
+		}
+	}
+
+	public static class Reducer2HbasePhase2 extends TableReducer<Text, IntWritable, NullWritable> {
+		// word, <filename, value>
+		private static String currentWord = "";
+		private static HashMap<String, Integer> currentValues = new HashMap<>();
+		private static NullWritable outputKey = NullWritable.get();
+		private Put outputValue;
+
+		@Override
+		public void reduce(Text key, Iterable<IntWritable> values, Context context)
+				throws IOException, InterruptedException {
+			String 	word = key.toString().split(",")[0];
+			String  fileName = key.toString().split(",")[1];
+			int sum = 0;
+			for(IntWritable val : values) {
+				sum += val.get();
+			}
+			if(word.equals(currentWord)) {
+				currentValues.put(fileName, sum);
+			}
+			else {
+				if(!currentWord.equals("")) {
+					//把前一个单词对应的记录写入Contex
+					double frequency = 0;
+					for(String string : currentValues.keySet()) {
+						frequency += currentValues.get(string);
+					}
+					double avgFrequency = frequency / currentValues.size();
+					outputValue = new Put(Bytes.toBytes(currentWord));
+					outputValue.addColumn(Bytes.toBytes("content"),Bytes.toBytes("avgFrequency"), Bytes.toBytes(String.format("%.2f",avgFrequency)));
+					context.write(outputKey, outputValue);
 				}
 				currentWord = word;
 				currentValues = new HashMap<>();
@@ -141,31 +199,40 @@ public class InvertedIndexer {
 				frequency += currentValues.get(string);
 			}
 			double avgFrequency = frequency / currentValues.size();
-			StringBuilder out = new StringBuilder();
-			out.append(String.format("%.2f",avgFrequency));
-			out.append(",");
-			for(String string : currentValues.keySet()) {
-				out.append(string+":"+currentValues.get(string)+";");
-			}
-			out.deleteCharAt(out.lastIndexOf(";"));
-			context.write(new Text(currentWord), new Text(out.toString()));
+			outputValue = new Put(Bytes.toBytes(currentWord));
+			outputValue.addColumn(Bytes.toBytes("content"),Bytes.toBytes("avgFrequency"), Bytes.toBytes(String.format("%.2f",avgFrequency)));
+			context.write(outputKey, outputValue);
 		}
 	}
 
 	public static void main(String[] args) throws Exception{
-		Configuration configuration = new Configuration();
-		Job job = Job.getInstance(configuration,"2019St13 Inverted Index Job");
-		job.setJarByClass(InvertedIndexer.class);
-		job.setMapperClass(InvertedIndexMapper.class);
-		job.setReducerClass(InvertedIndexReducer.class);
-		job.setCombinerClass(InvertedIndexCombiner.class);
-		job.setPartitionerClass(InvertedIndexPartitioner.class);
-		job.setInputFormatClass(TextInputFormat.class);
-		job.setOutputKeyClass(Text.class);
-		job.setOutputValueClass(IntWritable.class);
-		job.setNumReduceTasks(5);
-		FileInputFormat.addInputPath(job, new Path(args[0]));
-		FileOutputFormat.setOutputPath(job, new Path(args[1]));
-		System.exit(job.waitForCompletion(true)?0:1);
+		Configuration conf =new Configuration();
+		Job job1 = Job.getInstance(conf,"2019St13 Inverted Index Job to Hbase 1");
+		job1.setJarByClass(InvertedIndexer2Hbase.class);
+		job1.setMapperClass(InvertedIndexMapper.class);
+		job1.setReducerClass(Reducer2HbasePhase1.class);
+		job1.setCombinerClass(InvertedIndexCombiner.class);
+		job1.setPartitionerClass(InvertedIndexPartitioner.class);
+		job1.setInputFormatClass(TextInputFormat.class);
+		job1.setOutputKeyClass(Text.class);
+		job1.setOutputValueClass(IntWritable.class);
+		FileInputFormat.addInputPath(job1, new Path(args[0]));
+		FileOutputFormat.setOutputPath(job1, new Path(args[1]));
+
+		if(job1.waitForCompletion(true)) {
+			Configuration conf2 = HBaseConfiguration.create();
+			Job job2 = Job.getInstance(conf2, "2019St13 Inverted Index Job to Hbase 2");
+			job2.setJarByClass(InvertedIndexer2Hbase.class);
+			job2.setMapperClass(InvertedIndexMapper.class);
+			job2.setMapOutputKeyClass(Text.class);
+			job2.setMapOutputValueClass(IntWritable.class);
+
+			TableMapReduceUtil.initTableReducerJob("WuXia", Reducer2HbasePhase2.class, job2);
+			FileInputFormat.addInputPath(job2, new Path(args[0]));
+			System.exit(job2.waitForCompletion(true) ? 0 : 1);
+		}
+		else {
+			System.exit(1);
+		}
 	}
 }
